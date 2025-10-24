@@ -4,8 +4,6 @@
 
 A comprehensive R package providing all data processing, statistical analysis, and visualization functions for ATAC-seq differential accessibility analysis. Includes peak processing, count normalization, edgeR-based statistical testing, ChIPseeker annotation, and interactive reporting capabilities. Required for the UFHCC BCB-SR ATAC-seq analysis pipeline.
 
-Currently, some functions in this package can **only be run on HiPerGator** due to interaction with the /blue and /orange filesystem for use with WashU genome browser
-
 ## Features
 
 - **Flexible Data Loading**: Works with nf-core/atacseq output, existing DDS objects, or custom peak/BAM files
