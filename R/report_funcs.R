@@ -1114,6 +1114,7 @@ create_da_bigbed <- function(results_df, contrast_name, output_dir, organism) {
   # Avoid NSE warnings
   FDR <- logFC <- logCPM <- Gene.Name <- Chr <- Start <- End <- Strand <- NULL
   base_name <- direction_suffix <- peak_name <- score <- strand <- interval <- NULL
+  . <- NULL  # For dplyr's .[[column]] syntax
 
   # This function needs report_params from parent environment
   report_params <- get("report_params", envir = parent.frame())

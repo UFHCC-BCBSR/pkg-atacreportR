@@ -13,11 +13,12 @@ create_da_bigbed(results_df, contrast_name, output_dir, organism)
 
 \item{output_dir}{Output directory path}
 
-\item{organism}{Character string organism code}
+\item{organism}{Character string organism code ("mmu" or "hsa")}
 }
 \value{
-Character string BigBed filename or NULL
+Character string BigBed filename or NULL if creation failed
 }
 \description{
-Creates a BigBed track file from differential accessibility results.
+Filters significant DA peaks and creates a BigBed track file for genome browser visualization.
+Includes directional peak names indicating which group has increased accessibility.
 }
