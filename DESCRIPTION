@@ -1,0 +1,48 @@
+Package: atacreportR
+Title: ATAC-seq Differential Peak Analysis and Reporting Functions
+Version: 0.1.0
+Authors@R: 
+    person("Heather", "Kates", , "hkates@ufl.edu", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-8490-2201"))
+Description: Core functions for ATAC-seq differential accessibility
+    analysis, including peak processing, count normalization, statistical
+    testing with edgeR, annotation, and report generation. Designed for
+    use with the UFHCC BCB-SR ATAC-seq analysis pipeline.
+License: MIT + file LICENSE
+Imports:
+    AnnotationDbi,
+    base64enc,
+    BiocParallel,
+    car,
+    ChIPseeker,
+    clusterProfiler,
+    DESeq2,
+    dplyr,
+    DT,
+    edgeR,
+    GenomeInfoDb,
+    GenomicFeatures,
+    GenomicRanges,
+    ggplot2,
+    htmltools,
+    IRanges,
+    magrittr,
+    methods,
+    org.Hs.eg.db,
+    org.Mm.eg.db,
+    parallel,
+    plotly,
+    purrr,
+    readr,
+    Rsubread,
+    S4Vectors,
+    stringr,
+    SummarizedExperiment,
+    tibble,
+    tidyselect,
+    TxDb.Hsapiens.UCSC.hg38.knownGene,
+    TxDb.Mmusculus.UCSC.mm10.knownGene,
+    utils
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
