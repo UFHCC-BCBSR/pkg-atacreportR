@@ -4,21 +4,40 @@
 \alias{create_dds_from_peaks}
 \title{Create DESeqDataSet from peak and BAM files}
 \usage{
-create_dds_from_peaks(peak_files, bam_files, sample_info, organism)
+create_dds_from_peaks(peak_files, bam_files, sample_info, min_samples = NULL)
 }
 \arguments{
-\item{peak_files}{Named character vector of peak file paths}
+\item{peak_files}{Named character vector of peak file paths (BED format).
+Names should match sample identifiers in sample_info.}
 
-\item{bam_files}{Named character vector of BAM file paths}
+\item{bam_files}{Named character vector of BAM file paths.
+Names should match sample identifiers in sample_info.}
 
-\item{sample_info}{Data frame with sample metadata}
+\item{sample_info}{Data frame with sample metadata. Must have a "sample" column
+matching the names of peak_files and bam_files.}
 
-\item{organism}{Character string: "mmu" or "hsa"}
+\item{min_samples}{Integer minimum number of samples for consensus peaks
+(default: NULL, auto-calculates as max(2, 30\% of samples))}
 }
 \value{
-DESeqDataSet object with counts and metadata
+DESeqDataSet object with:
+\itemize{
+\item Count matrix as assay
+\item Sample metadata in colData
+\item Consensus peaks as rowRanges
+}
 }
 \description{
 Integrates consensus peak calling, read counting, and sample metadata
-to create a DESeqDataSet object.
+to create a DESeqDataSet object ready for differential accessibility analysis.
+}
+\examples{
+\dontrun{
+dds <- create_dds_from_peaks(
+  peak_files = c("s1" = "s1.bed", "s2" = "s2.bed"),
+  bam_files = c("s1" = "s1.bam", "s2" = "s2.bam"),
+  sample_info = data.frame(sample = c("s1", "s2"), condition = c("A", "B"))
+)
+}
+
 }

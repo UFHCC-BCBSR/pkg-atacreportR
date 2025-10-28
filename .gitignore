@@ -1,1 +1,8 @@
-.Rproj.user
+data-raw/
+R/data.R
+vignettes/
+data/
+inst/doc/
+*.Rproj.user
+.Rhistory
+.RData

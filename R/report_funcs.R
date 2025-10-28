@@ -723,6 +723,8 @@ plot_da_by_annotation <- function(results_list,
                                   logfc_cutoff = 1,
                                   plot_height = 400,
                                   plot_width = 550) {
+  significance_group <- contrast <- Annotation_short <- is_significant <- NULL
+  count <- FDR <- logFC <- NULL
 
   # Check required columns
   if (length(results_list) == 0) {

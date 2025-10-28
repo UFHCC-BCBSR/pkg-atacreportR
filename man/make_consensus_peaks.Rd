@@ -4,15 +4,30 @@
 \alias{make_consensus_peaks}
 \title{Create consensus peaks from multiple samples}
 \usage{
-make_consensus_peaks(peak_files)
+make_consensus_peaks(peak_files, min_samples = NULL)
 }
 \arguments{
-\item{peak_files}{Named character vector of peak file paths}
+\item{peak_files}{Named character vector of peak file paths (BED format).
+Names should be sample identifiers.}
+
+\item{min_samples}{Integer minimum number of samples required for consensus
+(default: NULL, auto-calculates as max(2, 30\% of samples))}
 }
 \value{
-GRanges object containing consensus peaks
+GRanges object containing consensus peaks with names "Peak_1", "Peak_2", etc.
 }
 \description{
 Merges peaks across samples and retains only reproducible peaks
-found in multiple samples.
+found in multiple samples. Uses a reproducibility threshold requiring
+peaks to be present in at least 30\% of samples (minimum 2).
+}
+\examples{
+\dontrun{
+peak_files <- c(
+  "sample1" = "sample1_peaks.bed",
+  "sample2" = "sample2_peaks.bed"
+)
+consensus <- make_consensus_peaks(peak_files)
+}
+
 }

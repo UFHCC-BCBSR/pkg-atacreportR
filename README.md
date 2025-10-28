@@ -1,231 +1,305 @@
 # atacreportR
 
-> ATAC-seq Differential Peak Analysis and Reporting Functions
+> Standalone R Package for ATAC-seq Differential Accessibility Analysis
 
-A comprehensive R package providing all data processing, statistical analysis, and visualization functions for ATAC-seq differential accessibility analysis. Includes peak processing, count normalization, edgeR-based statistical testing, ChIPseeker annotation, and interactive reporting capabilities. Required for the UFHCC BCB-SR ATAC-seq analysis pipeline.
+A comprehensive, modular R package for ATAC-seq data processing, statistical analysis, and visualization. Designed to work both as part of the UFHCC BCB-SR reporting pipeline and as a standalone toolkit for differential accessibility analysis.
 
 ## Features
 
-- **Flexible Data Loading**: Works with nf-core/atacseq output, existing DDS objects, or custom peak/BAM files
-- **Consensus Peak Creation**: Merges peaks across samples with reproducibility filtering
+### Data Processing & Analysis
+- **Flexible Data Input**: Load from nf-core/atacseq output, existing DESeq2 objects, or raw peak/BAM files
+- **Consensus Peak Generation**: Merge peaks across samples with reproducibility filtering
 - **Multiple Normalization Methods**: TMM normalization or spike-in normalization
-- **Differential Analysis**: edgeR-based quasi-likelihood framework for robust statistical testing
-- **Peak Annotation**: Annotates peaks with nearby genes using ChIPseeker
-- **Interactive Visualization**: PCA plots, MA plots, volcano plots with hover tooltips
-- **Enrichment Analysis**: GO term and KEGG pathway analysis with gene symbol mapping
-- **Genome Browser Integration**: Creates WashU Browser tracks for visualization
-- **Quality Control**: Comprehensive QC metrics including FRiP scores and alignment statistics
+- **Differential Analysis**: edgeR quasi-likelihood framework with configurable filtering
+- **Peak Annotation**: ChIPseeker integration with organism-specific databases
+
+### Visualization
+- **Interactive Plots**: PCA, MA plots, and volcano plots with plotly tooltips
+- **Annotation Barplots**: Genomic distribution of differential peaks
+- **Quality Control**: Comprehensive QC tables with FRiP scores and alignment statistics
+
+### Pathway Analysis
+- **GO Term Enrichment**: Biological Process, Molecular Function, Cellular Component
+- **KEGG Pathway Analysis**: With gene symbol mapping and interactive visualization
+- **Parallel Processing**: Configurable cores for enrichment analysis
+
+### Browser Integration
+- **WashU Epigenome Browser**: Automatic track generation with BigBed and BigWig files
 
 ## Installation
 
 ```r
 # Install from GitHub
 remotes::install_github("UFHCC-BCBSR/pkg-atacreportR")
-
-# Or with devtools
-devtools::install_github("UFHCC-BCBSR/pkg-atacreportR")
 ```
 
 ## Quick Start
 
 ```r
 library(atacreportR)
+library(edgeR)
 
-# Parse analysis parameters
-params <- parse_params("path/to/params.txt")
-
-# Load and prepare data
-analysis_data <- prepare_analysis_data(params)
-
-# Run differential analysis
-contrast_list <- parse_contrasts(params$contrasts)
-contrast_strings <- sapply(seq_along(contrast_list), function(i) {
-  paste0(i, ". ", contrast_list[[i]][1], " vs ", contrast_list[[i]][2])
-})
-
-results <- run_differential_analysis(
-  dge = dge,
-  peaks_anno = analysis_data$peaks_anno,
-  contrast_strings = contrast_strings,
-  report_params = params
+# 1. Load your DESeq2 object (from nf-core or custom)
+dds <- prepare_analysis_data(
+  sample_sheet = "samples.csv",
+  organism = "hsa",
+  output_dir = "results/",
+  dds_file = "my_dds.RData",  # Or provide peak_files + bam_files
+  peak_annotation = "peaks.anno.txt"
 )
 
-# Generate visualizations
-pca_plot <- plot_pca(dge, title = "Sample PCA", plot_var = "Condition")
-qc_table <- summarize_atac_sample_qc(analysis_data)
+# 2. Convert to DGEList with TMM normalization
+dge <- dds_to_dgelist(dds, norm_method = "TMM")
+
+# 3. Run differential analysis
+results_list <- run_differential_analysis(
+  dge = dge,
+  contrasts = c("Treatment_vs_Control", "KO_vs_WT"),
+  min_count = 10,
+  min_prop = 0.7
+)
+
+# 4. Visualize results
+plot_volcano(results_list, sig_cutoff = 0.05, logfc_cutoff = 1)
+plot_ma(results_list, sig_cutoff = 0.05, logfc_cutoff = 1)
+
+# 5. Run pathway enrichment
+enrichment_data <- prepare_gene_lists_for_enrichment(
+  results_list = results_list,
+  organism = "hsa",
+  sig_cutoff = 0.05,
+  logfc_cutoff = 1
+)
+
+GO_results <- generate_enrichment_plot_atac(
+  gene_lists = enrichment_data$gene_lists,
+  de_results_df = enrichment_data$results_df,
+  universe_entrez = enrichment_data$universe,
+  org_db = enrichment_data$org_db,
+  ont_category = "BP",
+  n_cores = 4
+)
 ```
 
 ## Main Functions
 
 ### Data Preparation
 
-- `prepare_analysis_data()` - Main data loading and preparation function
-- `parse_params()` - Parse parameter files
-- `load_sample_metadata()` - Load and validate sample sheets
-- `load_dds_file()` - Load existing DESeqDataSet objects
+#### Core Functions
+- `prepare_analysis_data()` - Load or create DESeq2 object from various sources
+- `load_sample_metadata()` - Parse and validate sample sheets (nf-core or simple format)
+- `load_dds_file()` - Load existing DESeqDataSet from RData
+- `load_peak_annotation()` - Load HOMER-format peak annotations
 - `load_qc_data()` - Load FRiP scores and flagstat files
 
-### Peak Processing
-
-- `make_consensus_peaks()` - Create consensus peaks from multiple samples
-- `count_bam_reads_in_peaks()` - Quantify reads in peaks using featureCounts
-- `create_dds_from_peaks()` - Build DESeqDataSet from peak and BAM files
-
-### Annotation
-
+#### Building from Scratch
+- `make_consensus_peaks()` - Create consensus peaks with reproducibility filtering
+- `count_bam_reads_in_peaks()` - Quantify reads using Rsubread::featureCounts
+- `create_dds_from_peaks()` - Build DESeqDataSet from peak/BAM files
 - `generate_peak_annotation()` - Annotate peaks with ChIPseeker
-- `load_peak_annotation()` - Load existing HOMER-format annotations
 
-### Differential Analysis
+### Data Conversion & Normalization
+- `dds_to_dgelist()` - Convert DESeq2 to edgeR DGEList with TMM/manual/no normalization
 
-- `run_differential_analysis()` - Perform edgeR differential accessibility analysis
-- `parse_contrasts()` - Parse contrast specifications
+### Differential Accessibility Analysis
+- `run_differential_analysis()` - edgeR quasi-likelihood testing across contrasts
 
-### Visualization
+### Interactive Visualization
+- `plot_pca()` - PCA with group ellipses and hover tooltips
+- `plot_volcano()` - Interactive volcano plots (one per contrast)
+- `plot_ma()` - Interactive MA plots (one per contrast)
+- `plot_da_by_annotation()` - Genomic annotation barplots (differential vs non-differential)
 
-- `plot_pca()` - Interactive PCA plot with group ellipses
-- `summarize_atac_sample_qc()` - Comprehensive QC summary table
-- `preprocess_result()` - Prepare results for MA/volcano plots
-- `download_button_png()` - Create download buttons for plots
+### Quality Control & Reporting
+- `summarize_atac_sample_qc()` - Comprehensive QC table with FRiP, alignment, peak counts
 
-### Enrichment Analysis
+### Pathway Enrichment
+- `prepare_gene_lists_for_enrichment()` - Extract gene lists and universe from results
+- `generate_enrichment_plot_atac()` - GO enrichment with interactive plots
+- `generate_kegg_enrichment_plot_atac()` - KEGG pathway enrichment
 
-- `generate_enrichment_plot_atac()` - GO term enrichment with custom tooltips
-- `generate_kegg_enrichment_plot_atac()` - KEGG pathway enrichment analysis
+### Genome Browser Integration
+- `create_da_bigbed()` - Generate BigBed tracks for WashU Browser
 
-### Utilities
+### Validation
+- `validate_data_consistency()` - Check data integrity across DDS, sample_info, annotations
 
-- `clean_group_name()` - Remove leading X from group names
-- `copy_file_to_web()` - Copy files for web hosting
-- `create_da_bigbed()` - Create BigBed tracks for genome browsers
-- `validate_data_consistency()` - Validate data integrity
+## Usage Examples
 
-## Supported Input Formats
-
-### nf-core/atacseq Output
+### Example 1: Starting from nf-core/atacseq Output
 
 ```r
-params$dds_file <- "path/to/consensus_peaks.mLb.clN.dds.RData"
-params$peak_annotation <- "path/to/consensus_peaks.mLb.clN.annotatePeaks.txt"
-analysis_data <- prepare_analysis_data(params)
+# nf-core provides a DDS object and HOMER annotations
+dds <- prepare_analysis_data(
+  sample_sheet = "samplesheet.csv",
+  organism = "mmu",
+  output_dir = "analysis/",
+  dds_file = "nfcore/consensus_peaks.mLb.clN.dds.RData",
+  peak_annotation = "nfcore/consensus_peaks.annotatePeaks.txt",
+  bigwig_files = c("s1" = "s1.bigWig", "s2" = "s2.bigWig"),
+  qc_flagstat_dir = "nfcore/flagstat/",
+  qc_frip_file = "nfcore/frip.txt"
+)
+
+# Convert to DGEList - all metadata is already integrated!
+dge <- dds_to_dgelist(dds, norm_method = "TMM")
+
+# Everything you need is in the DGEList:
+dge$genes        # Peak annotations
+dge$samples      # Sample metadata + QC metrics
+dge$counts       # Read counts
 ```
 
-### Custom Peak/BAM Files
+### Example 2: Building from Peak and BAM Files
 
 ```r
-params$peak_files <- "sample1:/path/to/peaks1.narrowPeak,sample2:/path/to/peaks2.narrowPeak"
-params$bam_files <- "sample1:/path/to/sample1.bam,sample2:/path/to/sample2.bam"
-analysis_data <- prepare_analysis_data(params)
+# Start from scratch with your own peak calls and alignments
+dds <- prepare_analysis_data(
+  sample_sheet = "samples.csv",
+  organism = "hsa",
+  output_dir = "results/",
+  peak_files = c("s1" = "s1_peaks.bed", "s2" = "s2_peaks.bed"),
+  bam_files = c("s1" = "s1.bam", "s2" = "s2.bam"),
+  is_paired_end = TRUE,
+  n_threads = 8
+)
+
+# Annotations are generated automatically with ChIPseeker
+# Consensus peaks are created with reproducibility filtering
 ```
 
-### Existing DDS Object
+### Example 3: Complete Analysis Workflow
 
 ```r
-params$dds_file <- "path/to/my_dds.RData"
-analysis_data <- prepare_analysis_data(params)
-```
+# Load data
+dds <- prepare_analysis_data(
+  sample_sheet = "samples.csv",
+  organism = "hsa",
+  output_dir = "results/",
+  dds_file = "my_dds.RData"
+)
 
-## Analysis Workflow Example
+# Normalize
+dge <- dds_to_dgelist(dds, norm_method = "TMM")
 
-Here's a complete workflow from start to finish:
+# Quality control
+qc_table <- summarize_atac_sample_qc(
+  dds = dds,
+  flagstat_dir = "qc/flagstat/"
+)
 
-```r
-library(atacreportR)
-library(edgeR)
-library(dplyr)
+pca_plot <- plot_pca(dge, title = "Sample PCA", plot_var = "condition")
 
-# 1. Parse parameters
-params <- parse_params("analysis_params.txt")
-
-# 2. Load and prepare data
-analysis_data <- prepare_analysis_data(params)
-
-# 3. Create DGEList with normalization
-targetGenome_counts <- SummarizedExperiment::assay(analysis_data$dds, "counts")
-
-# TMM normalization
-dge <- DGEList(counts = targetGenome_counts)
-dge$samples <- cbind(dge$samples, as.data.frame(SummarizedExperiment::colData(analysis_data$dds)))
-dge <- calcNormFactors(dge, method = "TMM")
-
-# 4. Run differential analysis
-contrast_list <- parse_contrasts(params$contrasts)
-contrast_strings <- sapply(seq_along(contrast_list), function(i) {
-  paste0(i, ". ", contrast_list[[i]][1], " vs ", contrast_list[[i]][2])
-})
-
-results_list <- run_differential_analysis(
+# Differential analysis (2+ contrasts supported)
+results <- run_differential_analysis(
   dge = dge,
-  peaks_anno = analysis_data$peaks_anno,
-  contrast_strings = contrast_strings,
-  report_params = params
+  contrasts = c("Treated_vs_Control", "KO_vs_WT"),
+  min_count = 10,
+  min_prop = 0.7
 )
 
-# 5. Extract significant peaks
-sig_peaks <- results_list[[1]]$table %>%
-  filter(FDR < 0.05, abs(logFC) > 1)
+# Visualize
+plot_volcano(results, sig_cutoff = 0.05, logfc_cutoff = 1)
+plot_da_by_annotation(results, sig_cutoff = 0.05, logfc_cutoff = 1)
 
-# 6. Run enrichment analysis
-# Prepare gene lists
-gene_lists <- list()
-for (contrast in names(results_list)) {
-  df <- results_list[[contrast]]$table
-  up_genes <- df %>%
-    filter(FDR < 0.05, logFC > 1) %>%
-    pull(ENTREZID) %>%
-    na.omit() %>% unique()
-  
-  gene_lists[[paste0(contrast, ".up")]] <- up_genes
-}
+# Enrichment (handles multiple contrasts automatically)
+enrichment <- prepare_gene_lists_for_enrichment(
+  results_list = results,
+  organism = "hsa",
+  sig_cutoff = 0.05,
+  logfc_cutoff = 1
+)
 
-# Get gene universe
-de_results_df <- bind_rows(lapply(names(results_list), function(contrast) {
-  df <- results_list[[contrast]]$table
-  df$Contrast <- contrast
-  return(df)
-}))
-
-universe_entrez <- na.omit(unique(de_results_df$ENTREZID))
-
-# Run GO enrichment
-GO_results <- generate_enrichment_plot_atac(
-  gene_lists = gene_lists,
-  de_results_df = de_results_df,
-  universe_entrez = universe_entrez,
+# GO and KEGG enrichment
+GO_BP <- generate_enrichment_plot_atac(
+  gene_lists = enrichment$gene_lists,
+  de_results_df = enrichment$results_df,
+  universe_entrez = enrichment$universe,
+  org_db = enrichment$org_db,
   ont_category = "BP",
-  annotation_db = params$annotation_db
+  n_cores = 4
 )
 
-# 7. Create visualizations
-qc_table <- summarize_atac_sample_qc(analysis_data)
-pca_plot <- plot_pca(dge, title = "PCA", plot_var = params$variable)
+kegg <- generate_kegg_enrichment_plot_atac(
+  gene_lists = enrichment$gene_lists,
+  de_results_df = enrichment$results_df,
+  universe_entrez = enrichment$universe,
+  org_db = enrichment$org_db,
+  organism = "hsa",
+  n_cores = 4
+)
 ```
+
+## Key Design Principles
+
+### 1. Standalone Functionality
+All functions work independently without requiring the full reporting pipeline. Parameters are explicit rather than bundled in `report_params`.
+
+### 2. Single Source of Truth
+- **DDS/DGEList Integration**: Sample metadata, peak annotations, and QC metrics are stored directly in the data objects
+- **No Separate DataFrames**: Everything travels together, reducing data sync issues
+
+### 3. Multi-Contrast Support
+Most analysis and visualization functions accept `results_list` with multiple contrasts and process them automatically.
+
+### 4. Interactive Visualization
+All plotting functions return plotly objects with hover tooltips for data exploration.
 
 ## Organism Support
 
-- **Mouse (mmu)**: Uses mm10 genome, org.Mm.eg.db, and TxDb.Mmusculus.UCSC.mm10.knownGene
-- **Human (hsa)**: Uses hg38 genome, org.Hs.eg.db, and TxDb.Hsapiens.UCSC.hg38.knownGene
+### Mouse (mmu)
+- Genome: mm10 (mm39 supported in annotation)
+- Gene DB: org.Mm.eg.db
+- Transcript DB: TxDb.Mmusculus.UCSC.mm10.knownGene
+- KEGG organism: "mmu"
 
-Genome chromosome size files are bundled with the package for offline use.
+### Human (hsa)
+- Genome: hg38 (hg19 supported in annotation)
+- Gene DB: org.Hs.eg.db
+- Transcript DB: TxDb.Hsapiens.UCSC.hg38.knownGene
+- KEGG organism: "hsa"
 
 ## Dependencies
 
-### Core Dependencies
-- edgeR, DESeq2 - Differential analysis
-- GenomicRanges, IRanges - Genomic interval operations
+### Statistical Analysis
+- edgeR - Differential accessibility
+- DESeq2 - Data structures
+- limma - Supporting functions
+
+### Genomics
+- GenomicRanges, IRanges - Interval operations
+- Rsubread - Read counting
 - ChIPseeker - Peak annotation
-- clusterProfiler - Enrichment analysis
+- GenomicFeatures, GenomeInfoDb - Genome databases
+
+### Enrichment
+- clusterProfiler - GO/KEGG analysis
+- org.Mm.eg.db, org.Hs.eg.db - Gene annotations
+- TxDb.* packages - Transcript annotations
+- BiocParallel - Parallel processing
 
 ### Visualization
-- ggplot2, plotly - Interactive plots
-- DT - Interactive tables
+- ggplot2 - Static plots
+- plotly - Interactive plots
 - pheatmap - Heatmaps
+- DT - Interactive tables
+- car - PCA ellipses
 
 ### Data Manipulation
 - dplyr, tidyr, purrr - Data wrangling
 - stringr - String operations
 
-See `DESCRIPTION` for complete list.
+See `DESCRIPTION` for the complete dependency list.
+
+## Pipeline Integration
+
+While atacreportR works standalone, it integrates seamlessly with:
+
+- **app-atacreportR** (Shiny): Configure analyses interactively and generate params files
+- **atacseq-Rmd** (Rmarkdown): Automated HTML reports with full QC and analysis
+- **nf-core/atacseq** (Nextflow): Upstream processing from FASTQ to consensus peaks
+
+The Rmd pipeline uses helper functions in `scripts/rmd-helpers.R` to parse params files into function arguments, but the core atacreportR functions remain independent.
 
 ## Citation
 
@@ -234,7 +308,7 @@ If you use atacreportR in your research, please cite:
 ```
 University of Florida Health Cancer Center
 Bioinformatics & Computational Research (BCB-SR)
-atacreportR: ATAC-seq Differential Peak Analysis and Reporting Functions
+atacreportR: ATAC-seq Differential Accessibility Analysis and Reporting
 https://github.com/UFHCC-BCBSR/pkg-atacreportR
 ```
 
@@ -252,15 +326,49 @@ devtools::check()
 
 # Build documentation
 devtools::document()
+
+# Reload after changes
+devtools::load_all()
+```
+
+## Troubleshooting
+
+### Plotly plots not rendering in console
+```r
+# Use print() or access specific plot
+print(plot_volcano(results))
+# Or extract from tagList
+plot_volcano(results)[[1]]
+```
+
+### Missing packages
+```r
+# Install organism databases as needed
+BiocManager::install("org.Hs.eg.db")
+BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+```
+
+### BAM index files
+featureCounts works without .bai files but runs faster with them. Generate with:
+```bash
+samtools index file.bam
 ```
 
 ## Related Projects
 
-- [app-atacreportR](https://github.com/UFHCC-BCBSR/app-atacreportR) - Shiny application for interactive analysis configuration
-- [nf-core/atacseq](https://github.com/nf-core/atacseq) - Upstream ATAC-seq processing pipeline
+- [app-atacreportR](https://github.com/UFHCC-BCBSR/app-atacreportR) - Shiny configuration interface
+- [atacseq-Rmd](https://github.com/UFHCC-BCBSR/atacseq-Rmd) - Automated HTML reports
+- [nf-core/atacseq](https://github.com/nf-core/atacseq) - Processing pipeline
 
 ## Support
 
 For questions, bug reports, or feature requests:
 - Open an issue on [GitHub](https://github.com/UFHCC-BCBSR/pkg-atacreportR/issues)
 - Contact UF Health Cancer Center BCB-SR
+
+## License
+
+[Specify your license here]
+```
+
+The updated README reflects all the refactoring work - standalone functions, explicit parameters, integrated data structures, and the separation between core package functions and Rmd helpers!

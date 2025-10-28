@@ -22,6 +22,7 @@ prepare_gene_lists_for_enrichment <- function(results_list,
                                               organism,
                                               sig_cutoff = 0.05,
                                               logfc_cutoff = 1) {
+  FDR <- logFC <- ENTREZID <- Entrez.ID <- ensembleID <- NULL
 
   # Load appropriate annotation database
   if (organism == "hsa") {
@@ -107,6 +108,9 @@ prepare_gene_lists_for_enrichment <- function(results_list,
 #' Add Entrez IDs to results dataframe
 #' @keywords internal
 .add_entrez_ids <- function(df, org_db) {
+
+  Entrez.ID <- ensembleID <- ENTREZID <- NULL
+
 
   # Check if already has ENTREZID
   if ("ENTREZID" %in% colnames(df)) {
@@ -402,6 +406,9 @@ generate_enrichment_plot_atac <- function(gene_lists,
 
 #' @keywords internal
 .add_gene_symbols_parallel <- function(filtered_results, org_db, de_results_df, n_cores) {
+  Contrast <- ENTREZID <- FDR <- logFC <- NULL
+
+
   # Batch map all Entrez IDs to symbols
   all_entrez_ids <- unique(unlist(strsplit(filtered_results$geneID, "/")))
   gene_symbols_batch <- AnnotationDbi::mapIds(org_db,

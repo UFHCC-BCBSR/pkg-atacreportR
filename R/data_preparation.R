@@ -59,8 +59,7 @@ prepare_analysis_data <- function(sample_sheet,
     dds <- create_dds_from_peaks(
       peak_files  = peak_files,
       bam_files   = bam_files,
-      sample_info = sample_info,
-      organism    = organism
+      sample_info = sample_info
     )
     created_dds <- TRUE
   }
