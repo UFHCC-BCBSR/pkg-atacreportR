@@ -37,14 +37,6 @@ load_sample_metadata <- function(sample_sheet_path) {
 }
 
 #' Process nf-core format sample sheet
-#'
-#' Cleans up nf-core specific formatting including technical replicates
-#' and fastq columns.
-#'
-#' @param sample_info Data frame with nf-core formatted sample info
-#'
-#' @return Cleaned data frame
-#'
 #' @keywords internal
 process_nfcore_format <- function(sample_info) {
   sample_info$sample <- gsub("_T\\d+", "", sample_info$sample)
@@ -70,18 +62,10 @@ process_nfcore_format <- function(sample_info) {
   }
 
   rownames(sample_info) <- sample_info$sample
-
   return(sample_info)
 }
 
 #' Process simple format sample sheet
-#'
-#' Handles minimal sample sheets with basic sample identifiers.
-#'
-#' @param sample_info Data frame with simple format sample info
-#'
-#' @return Processed data frame
-#'
 #' @keywords internal
 process_simple_format <- function(sample_info) {
   if (!"sample" %in% colnames(sample_info)) {
@@ -97,7 +81,6 @@ process_simple_format <- function(sample_info) {
   }
 
   rownames(sample_info) <- sample_info$sample
-
   return(sample_info)
 }
 
@@ -151,7 +134,6 @@ load_dds_file <- function(dds_file_path) {
   }
 
   cat("Loaded DDS object:", nrow(dds_obj), "peaks x", ncol(dds_obj), "samples\n")
-
   return(dds_obj)
 }
 
@@ -159,19 +141,19 @@ load_dds_file <- function(dds_file_path) {
 #'
 #' Loads flagstat files and FRiP scores if available.
 #'
-#' @param qc_files List containing flagstat_dir and frip_file paths
+#' @param flagstat_dir Optional directory path containing flagstat files
+#' @param frip_file Optional path to FRiP scores file
 #'
 #' @return List containing flagstat and frip data, or NULL if no QC data available
 #'
 #' @export
-load_qc_data <- function(qc_files) {
+load_qc_data <- function(flagstat_dir = NULL, frip_file = NULL) {
   cat("Loading QC data...\n")
   qc_data <- list()
 
-  if (!is.null(qc_files$flagstat_dir) && dir.exists(qc_files$flagstat_dir)) {
-    cat("Loading flagstat files from:", qc_files$flagstat_dir, "\n")
-    flagstat_files <- list.files(qc_files$flagstat_dir, pattern = "\\.flagstat$", full.names = TRUE)
-
+  if (!is.null(flagstat_dir) && dir.exists(flagstat_dir)) {
+    cat("Loading flagstat files from:", flagstat_dir, "\n")
+    flagstat_files <- list.files(flagstat_dir, pattern = "\\.flagstat$", full.names = TRUE)
     if (length(flagstat_files) > 0) {
       qc_data$flagstat <- load_flagstat_files(flagstat_files)
       cat("Loaded", length(flagstat_files), "flagstat files\n")
@@ -182,9 +164,9 @@ load_qc_data <- function(qc_files) {
     cat("No flagstat directory specified or directory not found\n")
   }
 
-  if (!is.null(qc_files$frip_file) && file.exists(qc_files$frip_file)) {
-    cat("Loading FRiP scores from:", basename(qc_files$frip_file), "\n")
-    qc_data$frip <- load_frip_file(qc_files$frip_file)
+  if (!is.null(frip_file) && file.exists(frip_file)) {
+    cat("Loading FRiP scores from:", basename(frip_file), "\n")
+    qc_data$frip <- load_frip_file(frip_file)
     cat("Loaded FRiP scores for", nrow(qc_data$frip), "samples\n")
   } else {
     cat("No FRiP file specified or file not found\n")
@@ -199,13 +181,6 @@ load_qc_data <- function(qc_files) {
 }
 
 #' Load flagstat files metadata
-#'
-#' Creates a data frame with flagstat file paths for later parsing.
-#'
-#' @param flagstat_files Character vector of flagstat file paths
-#'
-#' @return Data frame with sample names and file paths
-#'
 #' @keywords internal
 load_flagstat_files <- function(flagstat_files) {
   flagstat_data <- data.frame(
@@ -213,18 +188,10 @@ load_flagstat_files <- function(flagstat_files) {
     file_path = flagstat_files,
     stringsAsFactors = FALSE
   )
-
   return(flagstat_data)
 }
 
 #' Load FRiP scores from file
-#'
-#' Reads FRiP (Fraction of Reads in Peaks) scores from various file formats.
-#'
-#' @param frip_file Character string path to FRiP file
-#'
-#' @return Data frame with FRiP scores, or NULL if parsing fails
-#'
 #' @keywords internal
 load_frip_file <- function(frip_file) {
   tryCatch({
@@ -294,7 +261,7 @@ validate_data_consistency <- function(dds, sample_info, peak_anno) {
   cat("  DDS object:", nrow(dds), "peaks x", ncol(dds), "samples\n")
   cat("  Sample info:", nrow(sample_info), "samples with", ncol(sample_info), "metadata columns\n")
   cat("  Peak annotation:", nrow(peak_anno), "peaks with", ncol(peak_anno), "annotation columns\n")
-  cat("Validation complete\n")
 
+  cat("Validation complete\n")
   return(invisible(TRUE))
 }
