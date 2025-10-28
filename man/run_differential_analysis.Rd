@@ -4,16 +4,22 @@
 \alias{run_differential_analysis}
 \title{Run differential accessibility analysis across multiple contrasts}
 \usage{
-run_differential_analysis(dge, peaks_anno, contrast_strings, report_params)
+run_differential_analysis(
+  dge,
+  contrast_strings,
+  min_count = 10,
+  min_prop = 0.7
+)
 }
 \arguments{
-\item{dge}{A DGEList object containing normalized count data}
-
-\item{peaks_anno}{Data frame containing peak annotations}
+\item{dge}{A DGEList object containing normalized count data. Must have
+dge$genes populated with peak annotations including an 'interval' column.}
 
 \item{contrast_strings}{Character vector of contrast specifications (e.g., "1. Heat vs Control")}
 
-\item{report_params}{List of analysis parameters including min_count_for_filtering and min_prop_for_filtering}
+\item{min_count}{Minimum count threshold for filterByExpr (default: 10)}
+
+\item{min_prop}{Minimum proportion threshold for filterByExpr (default: 0.7)}
 }
 \value{
 A named list where each element contains the differential accessibility

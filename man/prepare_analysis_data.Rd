@@ -4,20 +4,50 @@
 \alias{prepare_analysis_data}
 \title{Prepare analysis data from various input sources}
 \usage{
-prepare_analysis_data(report_params)
+prepare_analysis_data(
+  sample_sheet,
+  organism,
+  output_dir,
+  project_id = "project",
+  dds_file = NULL,
+  peak_annotation = NULL,
+  peak_files = NULL,
+  bam_files = NULL,
+  bigwig_files = NULL,
+  qc_flagstat_dir = NULL,
+  qc_frip_file = NULL
+)
 }
 \arguments{
-\item{report_params}{List containing analysis parameters including file paths,
-organism specification, and output directory}
+\item{sample_sheet}{Path to sample metadata file (CSV/TSV)}
+
+\item{organism}{Organism code ("hsa" or "mmu")}
+
+\item{output_dir}{Directory where generated files should be saved}
+
+\item{project_id}{Project identifier for naming output files (default: "project")}
+
+\item{dds_file}{Optional path to existing DDS RData file}
+
+\item{peak_annotation}{Optional path to existing peak annotation file}
+
+\item{peak_files}{Optional named vector of peak files (names = sample IDs, values = paths)}
+
+\item{bam_files}{Optional named vector of BAM files (names = sample IDs, values = paths)}
+
+\item{bigwig_files}{Optional named vector of BigWig files (names = sample IDs, values = paths)}
+
+\item{qc_flagstat_dir}{Optional directory containing flagstat files}
+
+\item{qc_frip_file}{Optional path to FRiP summary file}
 }
 \value{
-List containing:
-\item{dds}{DESeqDataSet object with count data}
-\item{sample_info}{Data frame with sample metadata}
-\item{peaks_anno}{Data frame with peak annotations}
-\item{file_specs}{List of input file specifications}
-\item{qc_data}{List of QC metrics (optional)}
-\item{bigwig_files}{Named vector of BigWig file paths}
+DESeqDataSet object with:
+\itemize{
+\item counts in assays
+\item sample metadata, QC metrics, and bigwig paths in colData
+\item peak annotations in rowData
+}
 }
 \description{
 Main data preparation function that loads or creates DDS objects, peak annotations,

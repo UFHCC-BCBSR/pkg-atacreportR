@@ -69,7 +69,10 @@ parse_contrasts <- function(x) {
 #' Generates a comprehensive QC summary table including alignment statistics,
 #' peak counts, FRiP scores, and normalization factors.
 #'
-#' @param analysis_data List containing dds, file_specs, and qc_data
+#' @param dds DESeqDataSet object with sample metadata and QC metrics in colData
+#' @param peak_files Optional named vector of per-sample peak files (for calculating
+#'   open bases and per-sample peak counts). Names should match sample IDs.
+#' @param flagstat_dir Optional directory containing flagstat files for alignment statistics
 #' @param render_table Logical; if TRUE, returns a DT::datatable, otherwise a data frame
 #'
 #' @return Either a DT datatable or data frame with QC metrics
@@ -83,121 +86,98 @@ parse_contrasts <- function(x) {
 #' @importFrom SummarizedExperiment colData
 #' @importFrom stringr str_subset str_extract
 #' @export
-summarize_atac_sample_qc <- function(analysis_data, render_table = TRUE) {
+summarize_atac_sample_qc <- function(dds,
+                                     peak_files = NULL,
+                                     flagstat_dir = NULL,
+                                     render_table = TRUE) {
   # Avoid NSE warnings
   Sample <- Aligned_reads <- Open_bases <- Factor <- Peaks <- FRIP <- NULL
-  resolved_seq_dir <- NULL
 
-  dds <- analysis_data$dds
   samples <- colnames(dds)
+  coldata <- as.data.frame(SummarizedExperiment::colData(dds))
 
-  # Get file specifications
-  file_specs <- analysis_data$file_specs
-  peak_files <- file_specs$peak_files
-  qc_data <- analysis_data$qc_data
+  # Identify extra metadata columns to include (exclude technical columns)
+  exclude_cols <- c("sample", "sizeFactor", "fastq_1", "fastq_2", "replicate",
+                    "group.lib.size", "norm.factors", "bigwig_path")
+  extra_cols <- setdiff(colnames(coldata), exclude_cols)
 
-  # Identify extra metadata columns to include
-  exclude_cols <- c("sample", "sizeFactor", "fastq_1", "fastq_2", "replicate")
-  extra_cols <- setdiff(colnames(dds@colData), exclude_cols)
+  # === 1. SIZE FACTORS ===
+  if ("sizeFactor" %in% colnames(coldata)) {
+    factor_df <- tibble::tibble(
+      Sample = samples,
+      Factor = round(coldata[samples, "sizeFactor"], 3)
+    )
+  } else {
+    factor_df <- tibble::tibble(Sample = samples, Factor = NA_real_)
+  }
 
-  # === 1. OPEN BASES & PEAK COUNT ===
+  # === 2. OPEN BASES & PER-SAMPLE PEAK COUNT ===
   if (!is.null(peak_files)) {
-    # Use provided peak files
     open_bases_df <- purrr::map_dfr(samples, function(sample) {
       if (sample %in% names(peak_files)) {
         peak_file <- peak_files[[sample]]
         if (file.exists(peak_file)) {
-          peaks <- readr::read_tsv(peak_file, col_names = FALSE, col_types = readr::cols_only(
-            X1 = readr::col_character(), X2 = readr::col_double(), X3 = readr::col_double()
-          ))
+          peaks <- readr::read_tsv(peak_file, col_names = FALSE,
+                                   col_types = readr::cols_only(
+                                     X1 = readr::col_character(),
+                                     X2 = readr::col_double(),
+                                     X3 = readr::col_double()
+                                   ), show_col_types = FALSE)
           total_bases <- sum(peaks$X3 - peaks$X2)
           peak_count <- nrow(peaks)
-          tibble::tibble(Sample = sample, Open_bases = total_bases, Peaks = peak_count)
-        } else {
-          tibble::tibble(Sample = sample, Open_bases = NA_real_, Peaks = nrow(dds))
+          return(tibble::tibble(Sample = sample, Open_bases = total_bases, Peaks = peak_count))
         }
-      } else {
-        tibble::tibble(Sample = sample, Open_bases = NA_real_, Peaks = nrow(dds))
       }
+      # Fallback: use consensus peak count from DDS
+      tibble::tibble(Sample = sample, Open_bases = NA_real_, Peaks = nrow(dds))
     })
   } else {
-    # Fall back to old approach - look for individual peak files in resolved_seq_dir if available
-    if (exists("resolved_seq_dir")) {
-      open_bases_df <- purrr::map_dfr(samples, function(sample) {
-        peak_file <- file.path(resolved_seq_dir, paste0(sample, ".mLb.clN_peaks.broadPeak"))
-        if (file.exists(peak_file)) {
-          peaks <- readr::read_tsv(peak_file, col_names = FALSE, col_types = readr::cols_only(
-            X1 = readr::col_character(), X2 = readr::col_double(), X3 = readr::col_double()
-          ))
-          total_bases <- sum(peaks$X3 - peaks$X2)
-          peak_count <- length(readLines(peak_file))
-          tibble::tibble(Sample = sample, Open_bases = total_bases, Peaks = peak_count)
-        } else {
-          tibble::tibble(Sample = sample, Open_bases = NA_real_, Peaks = nrow(dds))
-        }
-      })
-    } else {
-      # No individual peak files available
-      open_bases_df <- tibble::tibble(
-        Sample = samples,
-        Open_bases = NA_real_,
-        Peaks = nrow(dds)
-      )
-    }
+    # No per-sample peak files - just report consensus count
+    open_bases_df <- tibble::tibble(
+      Sample = samples,
+      Open_bases = NA_real_,
+      Peaks = nrow(dds)
+    )
   }
-
-  # === 2. SIZE FACTORS ===
-  factor_df <- tibble::tibble(
-    Sample = samples,
-    Factor = round(colData(dds)[samples, "sizeFactor", drop = TRUE], 3)
-  )
 
   # === 3. ALIGNED READS ===
   aligned_reads_df <- tibble::tibble(Sample = samples, Aligned_reads = NA_integer_)
-  if (!is.null(qc_data$flagstat)) {
+
+  if (!is.null(flagstat_dir) && dir.exists(flagstat_dir)) {
     aligned_reads_df <- purrr::map_dfr(samples, function(sample) {
-      flagstat_row <- qc_data$flagstat[grepl(sample, qc_data$flagstat$sample), ]
-      if (nrow(flagstat_row) > 0) {
-        flagstat_path <- flagstat_row$file_path[1]
-        if (file.exists(flagstat_path)) {
-          flagstat_lines <- readLines(flagstat_path)
-          aligned_reads <- flagstat_lines %>%
-            stringr::str_subset("mapped \\(") %>%
-            stringr::str_extract("^\\d+") %>%
-            as.numeric()
-          return(tibble::tibble(Sample = sample, Aligned_reads = aligned_reads))
-        }
+      # Look for flagstat file matching sample name
+      flagstat_file <- list.files(flagstat_dir, pattern = paste0(sample, ".*\\.flagstat$"),
+                                  full.names = TRUE)
+
+      if (length(flagstat_file) > 0 && file.exists(flagstat_file[1])) {
+        flagstat_lines <- readLines(flagstat_file[1])
+        aligned_reads <- flagstat_lines %>%
+          stringr::str_subset("mapped \\(") %>%
+          stringr::str_extract("^\\d+") %>%
+          as.numeric()
+        return(tibble::tibble(Sample = sample, Aligned_reads = aligned_reads))
       }
       return(tibble::tibble(Sample = sample, Aligned_reads = NA_integer_))
     })
   }
 
   # === 4. FRIP SCORES ===
-  # FIX: Always create frip_df, even if no FRiP data exists
+  # Extract FRiP from colData if available
   frip_df <- tibble::tibble(Sample = samples, FRIP = NA_real_)
-  if (!is.null(qc_data$frip)) {
-    # Extract FRIP values - handle column name mismatches
-    for (sample in samples) {
-      # Try multiple column name formats
-      possible_cols <- c(
-        sample,                    # Direct match: "04D_REP1"
-        paste0("X", sample),       # X prefix: "X04D_REP1"
-        gsub("_", ".", sample)     # Dots instead: "04D.REP1"
-      )
 
-      # Find which column exists
-      matching_col <- intersect(possible_cols, colnames(qc_data$frip))
-      if (length(matching_col) > 0) {
-        # Find the row where this sample's FRiP value is stored
-        sample_row <- which(qc_data$frip$Sample == sample)
-        if (length(sample_row) > 0) {
-          frip_value <- qc_data$frip[[matching_col[1]]][sample_row[1]]
-          if (!is.na(frip_value)) {
-            frip_df$FRIP[frip_df$Sample == sample] <- round(frip_value * 100, 1)
-          }
-        }
-      }
+  # Check for FRiP-related columns in colData
+  frip_cols <- grep("frip|FRiP|Fraction", colnames(coldata), ignore.case = TRUE, value = TRUE)
+
+  if (length(frip_cols) > 0) {
+    # Use the first FRiP column found
+    frip_values <- coldata[[frip_cols[1]]]
+
+    # Convert to percentage if it looks like proportion (values < 1)
+    if (all(frip_values[!is.na(frip_values)] <= 1)) {
+      frip_values <- frip_values * 100
     }
+
+    frip_df$FRIP <- round(frip_values, 1)
   }
 
   # === 5. JOIN ALL ===
@@ -205,10 +185,14 @@ summarize_atac_sample_qc <- function(analysis_data, render_table = TRUE) {
     dplyr::left_join(aligned_reads_df, by = "Sample") %>%
     dplyr::left_join(open_bases_df, by = "Sample") %>%
     dplyr::left_join(frip_df, by = "Sample") %>%
-    dplyr::select(Sample, Aligned_reads, Open_bases, Factor, Peaks, FRIP) %>%
-    dplyr::left_join(tibble::as_tibble(colData(dds), rownames = "Sample") %>%
-                       dplyr::select(Sample, tidyselect::all_of(extra_cols)),
-                     by = "Sample")
+    dplyr::select(Sample, Aligned_reads, Open_bases, Factor, Peaks, FRIP)
+
+  # Add extra metadata columns if available
+  if (length(extra_cols) > 0) {
+    metadata_df <- tibble::as_tibble(coldata[, extra_cols, drop = FALSE], rownames = "Sample")
+    full_qc_df <- full_qc_df %>%
+      dplyr::left_join(metadata_df, by = "Sample")
+  }
 
   # Remove any duplicate rows
   full_qc_df <- full_qc_df %>% dplyr::distinct()
@@ -1286,4 +1270,104 @@ preprocess_result <- function(df, contrast) {
   df$negLogFDR <- -log10(df$FDR)
 
   df
+}
+
+#' Convert DESeqDataSet to DGEList
+#'
+#' Creates an edgeR DGEList object from a DESeqDataSet, transferring
+#' counts, sample metadata (colData), and peak annotations (rowData).
+#' Useful for converting from DESeq2 workflow to edgeR workflow.
+#'
+#' @param dds DESeqDataSet object with counts, and optionally colData and rowData
+#' @param norm_method Normalization method: "TMM" (default), "none", or "manual"
+#' @param norm_factors Optional numeric vector of manual normalization factors
+#'   (required if norm_method = "manual"). Must have length equal to ncol(dds).
+#'
+#' @return DGEList object with:
+#'   \item{counts}{Count matrix from dds}
+#'   \item{samples}{Sample metadata from colData(dds) plus library sizes and norm factors}
+#'   \item{genes}{Peak annotations from rowData(dds), if available}
+#'
+#' @examples
+#' \dontrun{
+#' # TMM normalization (default)
+#' dge <- dds_to_dgelist(my_dds)
+#'
+#' # No normalization
+#' dge_raw <- dds_to_dgelist(my_dds, norm_method = "none")
+#'
+#' # Manual normalization factors (e.g., from spike-ins)
+#' spikein_factors <- calculate_spikein_factors(spikein_dds)
+#' dge <- dds_to_dgelist(my_dds, norm_method = "manual", norm_factors = spikein_factors)
+#' }
+#'
+#' @importFrom edgeR DGEList calcNormFactors
+#' @importFrom SummarizedExperiment assay colData rowData
+#' @export
+dds_to_dgelist <- function(dds, norm_method = "TMM", norm_factors = NULL) {
+
+  # Validate input
+  if (!inherits(dds, "DESeqDataSet")) {
+    stop("dds must be a DESeqDataSet object")
+  }
+
+  # Extract counts
+  counts <- SummarizedExperiment::assay(dds, "counts")
+
+  # Create DGEList
+  dge <- edgeR::DGEList(counts = counts)
+
+  # Add sample metadata from colData
+  coldata_df <- as.data.frame(SummarizedExperiment::colData(dds))
+  if (ncol(coldata_df) > 0) {
+    dge$samples <- cbind(dge$samples, coldata_df)
+    cat("Added", ncol(coldata_df), "sample metadata columns to dge$samples\n")
+  }
+
+  # Add peak annotations from rowData if available
+  rowdata_df <- as.data.frame(SummarizedExperiment::rowData(dds))
+  if (ncol(rowdata_df) > 0) {
+    # Ensure rownames match
+    if ("interval" %in% colnames(rowdata_df)) {
+      rownames(rowdata_df) <- rowdata_df$interval
+    }
+    dge$genes <- rowdata_df[rownames(dge), ]
+    cat("Added", ncol(rowdata_df), "peak annotation columns to dge$genes\n")
+  } else {
+    cat("No peak annotations in rowData - dge$genes is empty\n")
+  }
+
+  # Apply normalization
+  if (norm_method == "TMM") {
+    cat("Calculating TMM normalization factors...\n")
+    dge <- edgeR::calcNormFactors(dge, method = "TMM")
+    cat("TMM normalization complete. Factors range:",
+        round(min(dge$samples$norm.factors), 3), "-",
+        round(max(dge$samples$norm.factors), 3), "\n")
+
+  } else if (norm_method == "manual") {
+    if (is.null(norm_factors)) {
+      stop("norm_factors must be provided when norm_method = 'manual'")
+    }
+    if (length(norm_factors) != ncol(dge)) {
+      stop("Length of norm_factors (", length(norm_factors),
+           ") must match number of samples (", ncol(dge), ")")
+    }
+    cat("Applying manual normalization factors...\n")
+    dge$samples$norm.factors <- norm_factors
+    cat("Manual normalization applied. Factors range:",
+        round(min(norm_factors), 3), "-",
+        round(max(norm_factors), 3), "\n")
+
+  } else if (norm_method == "none") {
+    cat("No normalization applied (all norm.factors = 1)\n")
+    dge$samples$norm.factors <- rep(1, ncol(dge))
+
+  } else {
+    stop("norm_method must be 'TMM', 'manual', or 'none'")
+  }
+
+  cat("Created DGEList:", nrow(dge), "peaks x", ncol(dge), "samples\n")
+
+  return(dge)
 }

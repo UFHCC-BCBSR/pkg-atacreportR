@@ -6,13 +6,7 @@
 \usage{
 load_flagstat_files(flagstat_files)
 }
-\arguments{
-\item{flagstat_files}{Character vector of flagstat file paths}
-}
-\value{
-Data frame with sample names and file paths
-}
 \description{
-Creates a data frame with flagstat file paths for later parsing.
+Load flagstat files metadata
 }
 \keyword{internal}

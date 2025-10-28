@@ -6,13 +6,7 @@
 \usage{
 process_simple_format(sample_info)
 }
-\arguments{
-\item{sample_info}{Data frame with simple format sample info}
-}
-\value{
-Processed data frame
-}
 \description{
-Handles minimal sample sheets with basic sample identifiers.
+Process simple format sample sheet
 }
 \keyword{internal}

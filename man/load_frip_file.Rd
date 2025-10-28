@@ -6,13 +6,7 @@
 \usage{
 load_frip_file(frip_file)
 }
-\arguments{
-\item{frip_file}{Character string path to FRiP file}
-}
-\value{
-Data frame with FRiP scores, or NULL if parsing fails
-}
 \description{
-Reads FRiP (Fraction of Reads in Peaks) scores from various file formats.
+Load FRiP scores from file
 }
 \keyword{internal}

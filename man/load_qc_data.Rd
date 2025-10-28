@@ -4,10 +4,12 @@
 \alias{load_qc_data}
 \title{Load QC data from various sources}
 \usage{
-load_qc_data(qc_files)
+load_qc_data(flagstat_dir = NULL, frip_file = NULL)
 }
 \arguments{
-\item{qc_files}{List containing flagstat_dir and frip_file paths}
+\item{flagstat_dir}{Optional directory path containing flagstat files}
+
+\item{frip_file}{Optional path to FRiP scores file}
 }
 \value{
 List containing flagstat and frip data, or NULL if no QC data available

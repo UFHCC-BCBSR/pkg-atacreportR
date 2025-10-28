@@ -4,10 +4,20 @@
 \alias{summarize_atac_sample_qc}
 \title{Summarize ATAC-seq sample QC metrics}
 \usage{
-summarize_atac_sample_qc(analysis_data, render_table = TRUE)
+summarize_atac_sample_qc(
+  dds,
+  peak_files = NULL,
+  flagstat_dir = NULL,
+  render_table = TRUE
+)
 }
 \arguments{
-\item{analysis_data}{List containing dds, file_specs, and qc_data}
+\item{dds}{DESeqDataSet object with sample metadata and QC metrics in colData}
+
+\item{peak_files}{Optional named vector of per-sample peak files (for calculating
+open bases and per-sample peak counts). Names should match sample IDs.}
+
+\item{flagstat_dir}{Optional directory containing flagstat files for alignment statistics}
 
 \item{render_table}{Logical; if TRUE, returns a DT::datatable, otherwise a data frame}
 }

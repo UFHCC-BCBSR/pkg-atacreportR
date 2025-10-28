@@ -6,14 +6,7 @@
 \usage{
 process_nfcore_format(sample_info)
 }
-\arguments{
-\item{sample_info}{Data frame with nf-core formatted sample info}
-}
-\value{
-Cleaned data frame
-}
 \description{
-Cleans up nf-core specific formatting including technical replicates
-and fastq columns.
+Process nf-core format sample sheet
 }
 \keyword{internal}
