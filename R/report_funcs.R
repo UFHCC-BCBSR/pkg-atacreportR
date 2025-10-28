@@ -1263,53 +1263,6 @@ create_da_bigbed <- function(results_df,
   return(chrom_sizes_file)
 }
 
-#' Preprocess differential accessibility results for visualization
-#'
-#' Adds grouping and significance columns for plotting.
-#'
-#' @param df Data frame with DA results
-#' @param contrast Character string contrast name
-#'
-#' @return Data frame with added visualization columns
-#'
-#' @importFrom dplyr case_when mutate
-#' @importFrom stringr str_trim str_split
-#' @export
-preprocess_result <- function(df, contrast) {
-  # Avoid NSE warnings
-  FDR <- logFC <- NULL
-
-  # Access report_params from parent environment
-  report_params <- get("report_params", envir = parent.frame())
-  # Avoid NSE warnings
-  FDR <- logFC <- NULL
-
-  # Access report_params from parent environment
-  report_params <- get("report_params", envir = parent.frame())
-
-  groups <- stringr::str_trim(stringr::str_split(gsub("\\.", "-", contrast), "_vs_", simplify = TRUE))
-  df$group1 <- groups[1]
-  df$group2 <- groups[2]
-
-  df$Accessibility <- dplyr::case_when(
-    df$FDR < report_params$sig_cutoff & df$logFC > report_params$logFC_cutoff ~
-      paste0("More accessible in ", df$group1),
-    df$FDR < report_params$sig_cutoff & df$logFC < -report_params$logFC_cutoff ~
-      paste0("More accessible in ", df$group2),
-    TRUE ~ "Not Significant"
-  )
-
-  df$Significant <- dplyr::case_when(
-    df$FDR < report_params$sig_cutoff & df$logFC > report_params$logFC_cutoff ~ "more",
-    df$FDR < report_params$sig_cutoff & df$logFC < -report_params$logFC_cutoff ~ "less",
-    TRUE ~ "ns"
-  )
-
-  df$negLogFDR <- -log10(df$FDR)
-
-  df
-}
-
 #' Convert DESeqDataSet to DGEList
 #'
 #' Creates an edgeR DGEList object from a DESeqDataSet, transferring
@@ -1408,4 +1361,309 @@ dds_to_dgelist <- function(dds, norm_method = "TMM", norm_factors = NULL) {
   cat("Created DGEList:", nrow(dge), "peaks x", ncol(dge), "samples\n")
 
   return(dge)
+}
+
+#' Plot differential accessibility results by genomic annotation
+#'
+#' Creates interactive plotly visualizations showing the distribution of
+#' genomic annotations for differential and non-differential peaks.
+#'
+#' @param results_list Named list of differential accessibility results from
+#'   run_differential_analysis()
+#' @param sig_cutoff FDR significance threshold (default: 0.05)
+#' @param logfc_cutoff Absolute log fold-change threshold (default: 1)
+#' @param plot_height Height of each plot in pixels (default: 400)
+#' @param plot_width Width of each plot in pixels (default: 550)
+#'
+#' @return HTML tagList containing interactive plotly plots for each contrast
+#'
+#' @importFrom dplyr bind_rows filter mutate case_when
+#' @importFrom stringr str_split
+#' @importFrom ggplot2 ggplot aes geom_bar geom_text scale_fill_manual labs theme_minimal theme element_text margin
+#' @importFrom plotly ggplotly layout subplot
+#' @importFrom htmltools tagList tags
+#' @export
+plot_da_by_annotation <- function(results_list,
+                                  sig_cutoff = 0.05,
+                                  logfc_cutoff = 1,
+                                  plot_height = 400,
+                                  plot_width = 550) {
+
+  # Check required columns
+  if (length(results_list) == 0) {
+    stop("results_list is empty")
+  }
+
+  test_df <- results_list[[1]]$table
+  required_cols <- c("FDR", "logFC", "Annotation_short")
+  missing <- setdiff(required_cols, colnames(test_df))
+  if (length(missing) > 0) {
+    stop("Missing required columns in results: ", paste(missing, collapse = ", "))
+  }
+
+  # Define a better color palette with good contrast
+  annotation_colors <- c(
+    "promoter-TSS" = "#E41A1C",    # Red
+    "TTS" = "#377EB8",              # Blue
+    "exon" = "#4DAF4A",             # Green
+    "intron" = "#984EA3",           # Purple
+    "Intergenic" = "#FF7F00"        # Orange
+  )
+
+  # STEP 1: Combine all contrasts
+  all_results <- bind_rows(
+    lapply(names(results_list), function(contrast) {
+      df <- results_list[[contrast]]$table
+      df$contrast <- contrast
+
+      parts <- stringr::str_split(contrast, "_vs_", simplify = TRUE)
+      left <- .clean_group_name(parts[1])
+      right <- .clean_group_name(parts[2])
+
+      df <- df %>%
+        dplyr::mutate(
+          significance_group = dplyr::case_when(
+            FDR < sig_cutoff & logFC > logfc_cutoff ~
+              paste0("More Accessible\nin ", right),
+            FDR < sig_cutoff & logFC < -logfc_cutoff ~
+              paste0("More Accessible\nin ", left),
+            TRUE ~ "Not Significant"
+          ),
+          is_significant = significance_group != "Not Significant"
+        )
+      return(df)
+    })
+  )
+
+  # STEP 2: Create plots for each contrast
+  all_plots <- lapply(unique(all_results$contrast), function(cn) {
+    contrast_df <- all_results %>%
+      dplyr::filter(contrast == cn, !is.na(Annotation_short))
+
+    parts <- stringr::str_split(cn, "_vs_", simplify = TRUE)
+    contrast_display <- paste(.clean_group_name(parts[1]), "vs",
+                              .clean_group_name(parts[2]))
+
+    # Split into significant and non-significant
+    sig_df <- contrast_df %>% dplyr::filter(is_significant == TRUE)
+    nonsig_df <- contrast_df %>% dplyr::filter(is_significant == FALSE)
+
+    # --- PLOT 1: Significant peaks ---
+    p1 <- ggplot2::ggplot(sig_df, ggplot2::aes(x = significance_group, fill = Annotation_short)) +
+      ggplot2::geom_bar(stat = "count", position = "stack", width = 0.6) +
+      ggplot2::geom_text(stat = "count", ggplot2::aes(label = ggplot2::after_stat(count)),
+                         position = ggplot2::position_stack(vjust = 0.5), size = 3.5,
+                         color = "white", fontface = "bold") +
+      ggplot2::scale_fill_manual(values = annotation_colors, name = "Genomic Region") +
+      ggplot2::labs(
+        title = paste("Differential Peaks:", contrast_display),
+        subtitle = paste("FDR <", sig_cutoff, ", |logFC| >", logfc_cutoff),
+        x = "",
+        y = "Number of Peaks"
+      ) +
+      ggplot2::theme_minimal(base_size = 11) +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(angle = 0, hjust = 0.5, face = "bold", size = 10),
+        plot.title = ggplot2::element_text(size = 12, face = "bold"),
+        plot.subtitle = ggplot2::element_text(size = 10, color = "gray40"),
+        plot.margin = ggplot2::margin(10, 10, 10, 10),
+        legend.position = "bottom",
+        legend.title = ggplot2::element_text(size = 10, face = "bold")
+      )
+
+    # --- PLOT 2: Non-significant peaks ---
+    p2 <- ggplot2::ggplot(nonsig_df, ggplot2::aes(x = "Not\nSignificant", fill = Annotation_short)) +
+      ggplot2::geom_bar(stat = "count", position = "stack", width = 0.6) +
+      ggplot2::geom_text(stat = "count", ggplot2::aes(label = ggplot2::after_stat(count)),
+                         position = ggplot2::position_stack(vjust = 0.5), size = 3.5,
+                         color = "white", fontface = "bold") +
+      ggplot2::scale_fill_manual(values = annotation_colors, name = "Genomic Region") +
+      ggplot2::labs(
+        title = paste("Non-Differential Peaks:", contrast_display),
+        subtitle = "Peaks not meeting significance criteria",
+        x = "",
+        y = "Number of Peaks"
+      ) +
+      ggplot2::theme_minimal(base_size = 11) +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(face = "bold", size = 10),
+        plot.title = ggplot2::element_text(size = 12, face = "bold"),
+        plot.subtitle = ggplot2::element_text(size = 10, color = "gray40"),
+        plot.margin = ggplot2::margin(10, 10, 10, 10),
+        legend.position = "bottom",
+        legend.title = ggplot2::element_text(size = 10, face = "bold")
+      )
+
+    # Convert to plotly
+    plotly1 <- plotly::ggplotly(p1, tooltip = c("fill", "count"))
+    plotly2 <- plotly::ggplotly(p2, tooltip = c("fill", "count"))
+
+    # Remove legend entries from second plot traces
+    for (i in seq_along(plotly2$x$data)) {
+      plotly2$x$data[[i]]$showlegend <- FALSE
+    }
+
+    # Combine plots side-by-side
+    combined_plot <- plotly::subplot(
+      plotly1, plotly2,
+      nrows = 1,
+      shareY = FALSE,
+      titleX = TRUE,
+      titleY = TRUE,
+      margin = 0.08
+    ) %>%
+      plotly::layout(
+        title = list(
+          text = paste0("<b>Peak Annotation by Differential Accessibility: ", contrast_display, "</b><br>",
+                        "<sub>FDR < ", sig_cutoff, ", |logFC| > ", logfc_cutoff, "</sub>"),
+          x = 0.5,
+          xanchor = "center",
+          font = list(size = 14)
+        ),
+        height = plot_height,
+        showlegend = TRUE,
+        legend = list(
+          orientation = "h",
+          x = 0.5,
+          xanchor = "center",
+          y = -0.15,
+          title = list(text = "<b>Genomic Region</b>", font = list(size = 11))
+        ),
+        annotations = list(
+          list(text = "<b>Differential Peaks</b>",
+               x = 0.25, y = 1.05,
+               xref = "paper", yref = "paper",
+               xanchor = "center", showarrow = FALSE,
+               font = list(size = 12)),
+          list(text = "<b>Non-Differential Peaks</b>",
+               x = 0.75, y = 1.05,
+               xref = "paper", yref = "paper",
+               xanchor = "center", showarrow = FALSE,
+               font = list(size = 12))
+        )
+      )
+
+    # Return plot with section break
+    list(
+      combined_plot,
+      htmltools::tags$div(style = "margin: 40px 0;")
+    )
+  })
+
+  # Return all plots
+  htmltools::tagList(unlist(all_plots, recursive = FALSE))
+}
+
+#' Clean group names for display
+#' @keywords internal
+.clean_group_name <- function(name) {
+  name <- sub("^X", "", name)
+  name <- gsub("_", " ", name)
+  return(name)
+}
+
+#' Create MA plots for differential accessibility results
+#'
+#' Generates interactive MA plots showing the relationship between average
+#' accessibility (log2 CPM) and differential accessibility (log2 fold change).
+#'
+#' @param results_list Named list of differential accessibility results from
+#'   run_differential_analysis()
+#' @param sig_cutoff FDR significance threshold (default: 0.05)
+#' @param logfc_cutoff Absolute log fold-change threshold (default: 1)
+#' @param point_size Size of points in plot (default: 5)
+#' @param point_opacity Opacity of points (default: 0.6)
+#'
+#' @return HTML tagList containing interactive plotly MA plots for each contrast
+#'
+#' @importFrom plotly plot_ly layout
+#' @importFrom htmltools tagList
+#' @export
+plot_ma <- function(results_list,
+                    sig_cutoff = 0.05,
+                    logfc_cutoff = 1,
+                    point_size = 5,
+                    point_opacity = 0.6) {
+
+  # Check if results_list is empty
+  if (length(results_list) == 0) {
+    stop("results_list is empty")
+  }
+
+  # Create MA plots for each contrast
+  ma_plots <- lapply(names(results_list), function(contrast) {
+    df <- results_list[[contrast]]$table
+
+    # Parse contrast name
+    parts <- strsplit(contrast, "_vs_")[[1]]
+    group1 <- .clean_group_name(parts[1])
+    group2 <- .clean_group_name(parts[2])
+    contrast_display <- paste(group1, "vs", group2)
+
+    # Add accessibility classification
+    df$Accessibility <- ifelse(
+      df$FDR < sig_cutoff & df$logFC > logfc_cutoff,
+      paste0("More accessible in ", group2),
+      ifelse(
+        df$FDR < sig_cutoff & df$logFC < -logfc_cutoff,
+        paste0("More accessible in ", group1),
+        "Not Significant"
+      )
+    )
+
+    # Define colors
+    color_values <- setNames(
+      c("#E41A1C", "#377EB8", "#999999"),  # Red, Blue, Gray
+      c(
+        paste0("More accessible in ", group1),
+        paste0("More accessible in ", group2),
+        "Not Significant"
+      )
+    )
+
+    # Create hover text
+    df$hover_text <- paste0(
+      "Gene: ", ifelse(is.na(df$Gene.Name) | df$Gene.Name == "", "N/A", df$Gene.Name), "<br>",
+      "logFC: ", round(df$logFC, 2), "<br>",
+      "logCPM: ", round(df$logCPM, 2), "<br>",
+      "FDR: ", format(df$FDR, scientific = TRUE, digits = 3)
+    )
+
+    # Create plotly MA plot
+    p <- plotly::plot_ly(
+      data = df,
+      x = ~logCPM,
+      y = ~logFC,
+      type = 'scatter',
+      mode = 'markers',
+      text = ~hover_text,
+      hoverinfo = 'text',
+      color = ~Accessibility,
+      colors = color_values,
+      marker = list(size = point_size, opacity = point_opacity)
+    ) %>%
+      plotly::layout(
+        title = list(
+          text = paste0("<b>MA Plot: ", contrast_display, "</b><br>",
+                        "<sub>Average Accessibility vs Fold Change</sub>"),
+          font = list(size = 14)
+        ),
+        xaxis = list(title = "Average Expression (log2 CPM)"),
+        yaxis = list(title = "log2 Fold Change"),
+        legend = list(
+          title = list(text = "<b>Accessibility</b>"),
+          orientation = "v",
+          x = 1.02,
+          xanchor = "left"
+        ),
+        hovermode = "closest",
+        height = 500,
+        width = 700
+      )
+
+    return(p)
+  })
+
+  # Return all plots as tagList
+  htmltools::tagList(ma_plots)
 }
