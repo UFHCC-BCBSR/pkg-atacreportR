@@ -1667,3 +1667,112 @@ plot_ma <- function(results_list,
   # Return all plots as tagList
   htmltools::tagList(ma_plots)
 }
+
+#' Create volcano plots for differential accessibility results
+#'
+#' Generates interactive volcano plots showing the relationship between
+#' log2 fold change and statistical significance (-log10 FDR).
+#'
+#' @param results_list Named list of differential accessibility results from
+#'   run_differential_analysis()
+#' @param sig_cutoff FDR significance threshold (default: 0.05)
+#' @param logfc_cutoff Absolute log fold-change threshold (default: 1)
+#' @param point_size Size of points in plot (default: 5)
+#' @param point_opacity Opacity of points (default: 0.6)
+#'
+#' @return HTML tagList containing interactive plotly volcano plots for each contrast
+#'
+#' @importFrom plotly plot_ly layout
+#' @importFrom htmltools tagList
+#' @export
+plot_volcano <- function(results_list,
+                         sig_cutoff = 0.05,
+                         logfc_cutoff = 1,
+                         point_size = 5,
+                         point_opacity = 0.6) {
+
+  # Check if results_list is empty
+  if (length(results_list) == 0) {
+    stop("results_list is empty")
+  }
+
+  # Create volcano plots for each contrast
+  volcano_plots <- lapply(names(results_list), function(contrast) {
+    df <- results_list[[contrast]]$table
+
+    # Parse contrast name
+    parts <- strsplit(contrast, "_vs_")[[1]]
+    group1 <- .clean_group_name(parts[1])
+    group2 <- .clean_group_name(parts[2])
+    contrast_display <- paste(group1, "vs", group2)
+
+    # Calculate -log10(FDR)
+    df$negLogFDR <- -log10(df$FDR)
+
+    # Add accessibility classification
+    df$Accessibility <- ifelse(
+      df$FDR < sig_cutoff & df$logFC > logfc_cutoff,
+      paste0("More accessible in ", group2),
+      ifelse(
+        df$FDR < sig_cutoff & df$logFC < -logfc_cutoff,
+        paste0("More accessible in ", group1),
+        "Not Significant"
+      )
+    )
+
+    # Define colors
+    color_values <- setNames(
+      c("#E41A1C", "#377EB8", "#999999"),  # Red, Blue, Gray
+      c(
+        paste0("More accessible in ", group1),
+        paste0("More accessible in ", group2),
+        "Not Significant"
+      )
+    )
+
+    # Create hover text
+    df$hover_text <- paste0(
+      "Gene: ", ifelse(is.na(df$Gene.Name) | df$Gene.Name == "", "N/A", df$Gene.Name), "<br>",
+      "logFC: ", round(df$logFC, 2), "<br>",
+      "-log10(FDR): ", round(df$negLogFDR, 2), "<br>",
+      "FDR: ", format(df$FDR, scientific = TRUE, digits = 3)
+    )
+
+    # Create plotly volcano plot
+    p <- plotly::plot_ly(
+      data = df,
+      x = ~logFC,
+      y = ~negLogFDR,
+      type = 'scatter',
+      mode = 'markers',
+      text = ~hover_text,
+      hoverinfo = 'text',
+      color = ~Accessibility,
+      colors = color_values,
+      marker = list(size = point_size, opacity = point_opacity)
+    ) %>%
+      plotly::layout(
+        title = list(
+          text = paste0("<b>Volcano Plot: ", contrast_display, "</b><br>",
+                        "<sub>Fold Change vs Statistical Significance</sub>"),
+          font = list(size = 14)
+        ),
+        xaxis = list(title = "log2 Fold Change"),
+        yaxis = list(title = "-log10(FDR)"),
+        legend = list(
+          title = list(text = "<b>Accessibility</b>"),
+          orientation = "v",
+          x = 1.02,
+          xanchor = "left"
+        ),
+        hovermode = "closest",
+        height = 500,
+        width = 700
+      )
+
+    return(p)
+  })
+
+  # Return all plots as tagList
+  htmltools::tagList(volcano_plots)
+}
