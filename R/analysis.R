@@ -4,8 +4,9 @@
 #' for ATAC-seq consensus peaks across multiple experimental contrasts.
 #'
 #' @param dge A DGEList object containing normalized count data. Must have
-#'   dge$genes populated with peak annotations including an 'interval' column.
-#' @param contrast_strings Character vector of contrast specifications (e.g., "1. Heat vs Control")
+#'   dge$genes populated with peak annotations.
+#' @param contrasts Character vector of contrast specifications in format
+#'   "Group1_vs_Group2" (e.g., c("Heat_vs_Control", "Treated_vs_Untreated"))
 #' @param min_count Minimum count threshold for filterByExpr (default: 10)
 #' @param min_prop Minimum proportion threshold for filterByExpr (default: 0.7)
 #'
@@ -16,7 +17,7 @@
 #' @importFrom stats model.matrix
 #' @export
 run_differential_analysis <- function(dge,
-                                      contrast_strings,
+                                      contrasts,
                                       min_count = 10,
                                       min_prop = 0.7) {
   # Avoid NSE warnings
@@ -40,8 +41,8 @@ run_differential_analysis <- function(dge,
     dge$genes$Gene.Name <- rep(NA_character_, nrow(dge$genes))
   }
 
-  # Parse and clean contrast strings
-  contrast_list <- .parse_contrast_strings(contrast_strings)
+  # Parse contrasts (simpler now - just split on "_vs_")
+  contrast_list <- .parse_contrasts(contrasts)
 
   # Ensure sample names are syntactically valid
   rownames(dge$samples) <- colnames(dge) <- make.names(colnames(dge))
@@ -58,12 +59,18 @@ run_differential_analysis <- function(dge,
   return(results_list)
 }
 
-#' Parse contrast string specifications
+#' Parse contrast specifications
 #' @keywords internal
-.parse_contrast_strings <- function(contrast_strings) {
-  lapply(contrast_strings, function(x) {
-    x_clean <- sub("^\\d+\\.\\s*", "", x)
-    parts <- trimws(unlist(strsplit(x_clean, "\\s+vs\\s+", perl = TRUE)))
+.parse_contrasts <- function(contrasts) {
+  lapply(contrasts, function(contrast_str) {
+    # Split on "_vs_" and clean up
+    parts <- trimws(unlist(strsplit(contrast_str, "_vs_")))
+
+    if (length(parts) != 2) {
+      stop("Invalid contrast format: '", contrast_str, "'. Expected format: 'Group1_vs_Group2'")
+    }
+
+    # Make names syntactically valid and replace hyphens
     gsub("-", "_", make.names(parts))
   })
 }
