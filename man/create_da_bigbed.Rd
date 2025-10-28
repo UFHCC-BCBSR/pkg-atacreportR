@@ -4,16 +4,33 @@
 \alias{create_da_bigbed}
 \title{Create BigBed file for differential accessibility peaks}
 \usage{
-create_da_bigbed(results_df, contrast_name, output_dir, organism)
+create_da_bigbed(
+  results_df,
+  contrast_name,
+  output_dir,
+  organism,
+  sig_cutoff = 0.05,
+  logfc_cutoff = 1,
+  min_logcpm = 2,
+  bedToBigBed_path = NULL
+)
 }
 \arguments{
-\item{results_df}{Data frame with DA results}
+\item{results_df}{Data frame with DA results including FDR, logFC, logCPM, and annotation columns}
 
-\item{contrast_name}{Character string contrast name}
+\item{contrast_name}{Character string contrast name (e.g., "Heat_vs_Control")}
 
-\item{output_dir}{Output directory path}
+\item{output_dir}{Output directory path for generated files}
 
-\item{organism}{Character string organism code ("mmu" or "hsa")}
+\item{organism}{Character string organism code ("mmu" for mouse, "hsa" for human)}
+
+\item{sig_cutoff}{FDR significance threshold (default: 0.05)}
+
+\item{logfc_cutoff}{Absolute log fold-change threshold (default: 1)}
+
+\item{min_logcpm}{Minimum average accessibility threshold (default: 2)}
+
+\item{bedToBigBed_path}{Optional path to bedToBigBed executable (auto-detected if NULL)}
 }
 \value{
 Character string BigBed filename or NULL if creation failed

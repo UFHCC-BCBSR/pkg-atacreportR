@@ -1050,76 +1050,121 @@ copy_file_to_web <- function(source_path, dest_dir, filename) {
   }
   return(FALSE)
 }
-
 #' Create BigBed file for differential accessibility peaks
 #'
 #' Filters significant DA peaks and creates a BigBed track file for genome browser visualization.
 #' Includes directional peak names indicating which group has increased accessibility.
 #'
-#' @param results_df Data frame with DA results
-#' @param contrast_name Character string contrast name
-#' @param output_dir Output directory path
-#' @param organism Character string organism code ("mmu" or "hsa")
+#' @param results_df Data frame with DA results including FDR, logFC, logCPM, and annotation columns
+#' @param contrast_name Character string contrast name (e.g., "Heat_vs_Control")
+#' @param output_dir Output directory path for generated files
+#' @param organism Character string organism code ("mmu" for mouse, "hsa" for human)
+#' @param sig_cutoff FDR significance threshold (default: 0.05)
+#' @param logfc_cutoff Absolute log fold-change threshold (default: 1)
+#' @param min_logcpm Minimum average accessibility threshold (default: 2)
+#' @param bedToBigBed_path Optional path to bedToBigBed executable (auto-detected if NULL)
 #'
 #' @return Character string BigBed filename or NULL if creation failed
 #'
 #' @importFrom dplyr filter mutate select
 #' @export
-create_da_bigbed <- function(results_df, contrast_name, output_dir, organism) {
+create_da_bigbed <- function(results_df,
+                             contrast_name,
+                             output_dir,
+                             organism,
+                             sig_cutoff = 0.05,
+                             logfc_cutoff = 1,
+                             min_logcpm = 2,
+                             bedToBigBed_path = NULL) {
+
   # Avoid NSE warnings
   FDR <- logFC <- logCPM <- Gene.Name <- Chr <- Start <- End <- Strand <- NULL
   base_name <- direction_suffix <- peak_name <- score <- strand <- interval <- NULL
-  . <- NULL  # For dplyr's .[[column]] syntax
+  . <- NULL
 
-  # This function needs report_params from parent environment
-  report_params <- get("report_params", envir = parent.frame())
-
+  # Filter for significant peaks
   sig_peaks <- results_df %>%
-    dplyr::filter(FDR < report_params$sig_cutoff,
-                  abs(logFC) > report_params$logFC_cutoff,
-                  logCPM > 2,
-                  !is.na(Gene.Name))
+    dplyr::filter(
+      FDR < sig_cutoff,
+      abs(logFC) > logfc_cutoff,
+      logCPM > min_logcpm
+    )
+
+  # Filter for peaks with gene names if Gene.Name column exists and has values
+  if ("Gene.Name" %in% colnames(sig_peaks)) {
+    n_before <- nrow(sig_peaks)
+    sig_peaks <- sig_peaks %>%
+      dplyr::filter(!is.na(Gene.Name) & Gene.Name != "")
+    cat("Filtered", n_before - nrow(sig_peaks), "peaks without gene names\n")
+  }
 
   if (nrow(sig_peaks) == 0) {
     cat("No significant peaks found for", contrast_name, "\n")
     return(NULL)
   }
 
+  # Extract group names from contrast
   group_names <- strsplit(contrast_name, "_vs_")[[1]]
   group1 <- group_names[1]
   group2 <- if (length(group_names) > 1) group_names[2] else "baseline"
 
+  # Detect column name formats (HOMER vs ChIPseeker)
   chr_col <- if ("Chr" %in% colnames(sig_peaks)) "Chr" else "seqnames"
   start_col <- if ("Start" %in% colnames(sig_peaks)) "Start" else "start"
   end_col <- if ("End" %in% colnames(sig_peaks)) "End" else "end"
   strand_col <- if ("Strand" %in% colnames(sig_peaks)) "Strand" else "strand"
 
-  cat("Detected columns for", contrast_name, ":\n")
-  cat("  Chr:", chr_col, "Start:", start_col, "End:", end_col, "Strand:", strand_col, "\n")
+  cat("Processing", nrow(sig_peaks), "significant peaks for", contrast_name, "\n")
+  cat("Using columns - Chr:", chr_col, "Start:", start_col, "End:", end_col, "\n")
 
+  # Define standard chromosomes
   standard_chroms <- if (organism == "mmu") {
     paste0("chr", c(1:19, "X", "Y", "M"))
   } else {
     paste0("chr", c(1:22, "X", "Y", "M"))
   }
 
+  # Determine peak name: use Gene.Name if available, otherwise interval
+  has_gene_names <- "Gene.Name" %in% colnames(sig_peaks)
+  has_interval <- "interval" %in% colnames(sig_peaks)
+
+  # Create BED format data
   bed_data <- sig_peaks %>%
     dplyr::mutate(
       Chr = as.character(.[[chr_col]]),
       Start = .[[start_col]],
       End = .[[end_col]],
-      Strand = if (strand_col %in% colnames(.)) .[[strand_col]] else ".",
-      base_name = ifelse(!is.na(Gene.Name) & Gene.Name != "", Gene.Name, interval),
-      direction_suffix = ifelse(logFC > report_params$logFC_cutoff,
+      Strand = if (strand_col %in% colnames(.)) .[[strand_col]] else "."
+    )
+
+  # Add peak names
+  if (has_gene_names) {
+    bed_data <- bed_data %>%
+      dplyr::mutate(base_name = Gene.Name)
+  } else if (has_interval) {
+    bed_data <- bed_data %>%
+      dplyr::mutate(base_name = interval)
+  } else {
+    # Fallback: create names from coordinates
+    bed_data <- bed_data %>%
+      dplyr::mutate(base_name = paste0(Chr, ":", Start, "-", End))
+  }
+
+  # Add directional suffix
+  bed_data <- bed_data %>%
+    dplyr::mutate(
+      direction_suffix = ifelse(logFC > logfc_cutoff,
                                 paste0("_MORE_ACC_IN_", toupper(group1)),
                                 paste0("_MORE_ACC_IN_", toupper(group2))),
       peak_name = paste0(base_name, direction_suffix)
     ) %>%
+    # Ensure chr prefix
     dplyr::mutate(Chr = ifelse(grepl("^chr", Chr), Chr, paste0("chr", Chr))) %>%
+    # Filter to standard chromosomes
     dplyr::filter(Chr %in% standard_chroms) %>%
-    dplyr::select(Chr, Start, End, peak_name, logFC, FDR, Strand) %>%
+    # Create score column (higher for more significant)
     dplyr::mutate(
-      score = as.integer(ifelse(logFC > report_params$logFC_cutoff,
+      score = as.integer(ifelse(logFC > logfc_cutoff,
                                 pmin(1000, pmax(600, 600 + abs(logFC) * 100)),
                                 pmin(500, pmax(200, 500 - abs(logFC) * 100)))),
       strand = Strand
@@ -1131,60 +1176,53 @@ create_da_bigbed <- function(results_df, contrast_name, output_dir, organism) {
     return(NULL)
   }
 
-  cat("Sample directional peak names for", contrast_name, ":\n")
-  sample_names <- head(bed_data$peak_name, 3)
-  cat(paste(sample_names, collapse = "\n"), "\n")
-  cat("Sample scores:", head(bed_data$score, 3), "\n")
-  cat("Peaks retained after chromosome filtering:", nrow(bed_data), "\n\n")
+  cat("Final peak count:", nrow(bed_data), "\n")
+  cat("Sample peak names:", paste(head(bed_data$peak_name, 3), collapse = ", "), "\n\n")
 
+  # Write BED file
   bed_file <- file.path(output_dir, paste0(contrast_name, "_DA_peaks.bed"))
   write.table(bed_data, bed_file, sep = "\t", quote = FALSE,
               row.names = FALSE, col.names = FALSE)
 
+  # Sort BED file
   sorted_bed_file <- file.path(output_dir, paste0(contrast_name, "_DA_peaks_sorted.bed"))
   system2("sort", args = c("-k1,1", "-k2,2n", bed_file),
           stdout = sorted_bed_file, env = c("LC_COLLATE=C"))
 
-  # Determine genome and get chrom.sizes file
+  # Get chrom.sizes file
   genome_alias <- if (organism == "mmu") "mm10" else "hg38"
+  chrom_sizes_file <- .get_chrom_sizes(genome_alias, output_dir)
 
-  # Try to use bundled chrom.sizes file from package
-  chrom_sizes_file <- system.file("extdata",
-                                  paste0(genome_alias, ".chrom.sizes"),
-                                  package = "atacreportR")
-
-  # If not found in package, download to output directory
-  if (chrom_sizes_file == "" || !file.exists(chrom_sizes_file)) {
-    cat("Chrom.sizes not bundled with package, downloading...\n")
-    chrom_sizes_file <- file.path(output_dir, paste0(genome_alias, ".chrom.sizes"))
-
-    if (!file.exists(chrom_sizes_file)) {
-      download.file(
-        paste0("http://hgdownload.soe.ucsc.edu/goldenPath/",
-               genome_alias, "/bigZips/", genome_alias, ".chrom.sizes"),
-        chrom_sizes_file,
-        quiet = TRUE
+  # Find bedToBigBed executable
+  if (is.null(bedToBigBed_path)) {
+    bedToBigBed_path <- Sys.which("bedToBigBed")
+    if (bedToBigBed_path == "") {
+      # Try common locations
+      alt_paths <- c(
+        "/apps/ucsc/20210803/bedToBigBed",
+        "/usr/local/bin/bedToBigBed",
+        "/usr/bin/bedToBigBed"
       )
-      cat("Downloaded", basename(chrom_sizes_file), "\n")
-    }
-  } else {
-    cat("Using bundled chrom.sizes file\n")
-  }
-
-  bedToBigBed_path <- Sys.which("bedToBigBed")
-  if (bedToBigBed_path == "") {
-    alt_path <- "/apps/ucsc/20210803/bedToBigBed"
-    if (file.exists(alt_path)) {
-      bedToBigBed_path <- alt_path
-    } else {
-      stop("bedToBigBed not found")
+      for (path in alt_paths) {
+        if (file.exists(path)) {
+          bedToBigBed_path <- path
+          break
+        }
+      }
     }
   }
 
+  if (bedToBigBed_path == "" || !file.exists(bedToBigBed_path)) {
+    stop("bedToBigBed executable not found. Please install UCSC tools or provide path.")
+  }
+
+  # Convert to BigBed
   bigbed_file <- file.path(output_dir, paste0(contrast_name, "_DA_peaks.bb"))
-  result <- system2(bedToBigBed_path, args = c(sorted_bed_file, chrom_sizes_file, bigbed_file),
+  result <- system2(bedToBigBed_path,
+                    args = c(sorted_bed_file, chrom_sizes_file, bigbed_file),
                     stdout = TRUE, stderr = TRUE)
 
+  # Check if successful
   if (file.exists(bigbed_file) && file.size(bigbed_file) > 1000) {
     system2("chmod", args = c("644", bigbed_file))
     cat("Successfully created BigBed:", basename(bigbed_file), "\n")
@@ -1194,6 +1232,35 @@ create_da_bigbed <- function(results_df, contrast_name, output_dir, organism) {
     if (length(result) > 0) cat("Error:", paste(result, collapse = "\n"), "\n")
     return(NULL)
   }
+}
+
+#' Get chromosome sizes file
+#' @keywords internal
+.get_chrom_sizes <- function(genome_alias, output_dir) {
+  # Try package-bundled file first
+  chrom_sizes_file <- system.file("extdata",
+                                  paste0(genome_alias, ".chrom.sizes"),
+                                  package = "atacreportR")
+
+  # If not found, download to output directory
+  if (chrom_sizes_file == "" || !file.exists(chrom_sizes_file)) {
+    cat("Downloading chrom.sizes file for", genome_alias, "...\n")
+    chrom_sizes_file <- file.path(output_dir, paste0(genome_alias, ".chrom.sizes"))
+
+    if (!file.exists(chrom_sizes_file)) {
+      download.file(
+        paste0("http://hgdownload.soe.ucsc.edu/goldenPath/",
+               genome_alias, "/bigZips/", genome_alias, ".chrom.sizes"),
+        chrom_sizes_file,
+        quiet = TRUE
+      )
+      cat("Downloaded chrom.sizes file\n")
+    }
+  } else {
+    cat("Using bundled chrom.sizes file\n")
+  }
+
+  return(chrom_sizes_file)
 }
 
 #' Preprocess differential accessibility results for visualization
