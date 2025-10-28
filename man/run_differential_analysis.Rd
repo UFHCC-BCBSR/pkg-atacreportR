@@ -4,18 +4,14 @@
 \alias{run_differential_analysis}
 \title{Run differential accessibility analysis across multiple contrasts}
 \usage{
-run_differential_analysis(
-  dge,
-  contrast_strings,
-  min_count = 10,
-  min_prop = 0.7
-)
+run_differential_analysis(dge, contrasts, min_count = 10, min_prop = 0.7)
 }
 \arguments{
 \item{dge}{A DGEList object containing normalized count data. Must have
-dge$genes populated with peak annotations including an 'interval' column.}
+dge$genes populated with peak annotations.}
 
-\item{contrast_strings}{Character vector of contrast specifications (e.g., "1. Heat vs Control")}
+\item{contrasts}{Character vector of contrast specifications in format
+"Group1_vs_Group2" (e.g., c("Heat_vs_Control", "Treated_vs_Untreated"))}
 
 \item{min_count}{Minimum count threshold for filterByExpr (default: 10)}
 
